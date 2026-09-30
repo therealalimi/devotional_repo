@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Devotion Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#faf8f4;--cd:#fff;--tx:#1f1b16;--mu:#6b6459;--ac:#7a4b1e;--ln:#e6dfd3;--ok:#2e7d4f;--bd:#a8781f}
+@media(prefers-color-scheme:dark){:root{--bg:#17140f;--cd:#211d17;--tx:#f0e9dc;--mu:#a69d8d;--ac:#e0a96d;--ln:#38322a;--ok:#5cc28a;--bd:#e0b45f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 Georgia,'Times New Roman',serif}
+main{max-width:780px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0}h2{font-size:18px;margin:0 0 8px}.mu{color:var(--mu);font-size:14px}
+nav{display:flex;gap:6px;overflow-x:auto;margin:12px 0;padding-bottom:4px}
+nav button,.btn{font:inherit;font-size:14px;border:1px solid var(--ln);background:var(--cd);color:var(--tx);border-radius:999px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+nav button.on,.btn.pri{background:var(--ac);color:var(--bg);border-color:var(--ac)}
+.card{background:var(--cd);border:1px solid var(--ln);border-radius:12px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+select,input[type=text],input[type=password],input[type=date],textarea{font:inherit;font-size:15px;padding:8px;border:1px solid var(--ln);border-radius:8px;background:var(--bg);color:var(--tx);max-width:100%;width:100%}
+textarea{min-height:120px;font-family:monospace;font-size:13px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--ln)}.row:last-child{border:0}
+.tag{font-size:12px;color:var(--ac);border:1px solid var(--ln);border-radius:6px;padding:0 6px}
+.badge{display:inline-block;font-size:12px;background:var(--bd);color:var(--bg);border-radius:6px;padding:2px 7px;margin:2px 4px 2px 0}
+.bar{height:12px;background:var(--ln);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
+.big{font-size:38px;font-weight:bold;color:var(--ac)}.ok{color:var(--ok)}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:6px;border-bottom:1px solid var(--ln);text-align:left}
+.center{max-width:360px;margin:40px auto}
+label.chk{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--ln);border-radius:10px;margin-bottom:8px;font-size:17px}
+.link{color:var(--ac);text-decoration:underline;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+.err{color:#c0392b;font-size:14px}
+</style></head><body><main id="root"></main>
+<script>
+/* ====== fill this in from your Firebase project settings ====== */
+const firebaseConfig={apiKey:"AIzaSyBF2Fv6987RSxOiZO3snca9ngcBeRpUm0s",authDomain:"devotional-database.firebaseapp.com",projectId:"devotional-database",storageBucket:"devotional-database.firebasestorage.app",messagingSenderId:"562813483695",appId:"1:562813483695:web:09f51ba7f1bf823cd9b25a"};
+const ADMIN_PW="PropheticBody@0608";
+const ADMIN_EMAIL="alimabdulwasi@gmail.com";
+/* ================================================================ */
+firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+const $=s=>document.querySelector(s),root=()=>$("#root");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const slug=s=>String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,"-");
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const pct=x=>Math.round((x||0)*100)+"%",bar=x=>`<div class="bar"><i style="width:${Math.round((x||0)*100)}%"></i></div>`;
+const today=iso(new Date());
+const BADGES=[["perfect","Perfect Attendance",p=>p.pp>=1],["early","Early Bird",p=>p.pp>=.9],["word","Word Warrior",p=>p.rr>=.9],["finisher","Finisher",p=>p.rr>=1]];
+
+let users=[],seasons=[],active="",me=null,adminUnlocked=false,view="login",regErr="",loginErr="",tab="today",selDate="",newSeason=null,adminTab="pending";
+try{me=JSON.parse(localStorage.getItem("dev_user")||"null");adminUnlocked=localStorage.getItem("dev_admin_ok")=="1"}catch(e){}
+function season(id){return seasons.find(s=>s.id==id)||seasons[seasons.length-1]}
+function cur(){return season(active)}
+function days(s){if(!s)return[];const out=[];let d=new Date(s.start+"T00:00:00");while(out.length<s.plan.length){if(!(s.skipSunday&&d.getDay()==0))out.push({date:iso(d),label:d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),plan:s.plan[out.length]||["",""]});d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)}return out}
+function activeUsers(){return users.filter(u=>u.status=="active")}
+function pendingUsers(){return users.filter(u=>u.status=="pending")}
+function usersByGroup(n){return activeUsers().filter(u=>u.group==n)}
+function groupNums(){return[...new Set(activeUsers().map(u=>u.group))].filter(n=>n).sort((a,b)=>a-b)}
+function leaderOrder(s){if(s&&s.leaderOrder&&s.leaderOrder.length)return s.leaderOrder;return activeUsers().filter(u=>u.role=="Leader").map(u=>u.name)}
+function leaderOfDay(s,idx){const lo=leaderOrder(s);return lo.length?lo[idx%lo.length]:""}
+let ATT={},CHK={},SETTINGS={};
+function hasAtt(date,name){return !!ATT[date+"__"+slug(name)]}
+function hasChk(date,name){return !!CHK[date+"__"+slug(name)]}
+function stats(name,S){const D=days(S);let p=0,r=0;D.forEach(d=>{if(hasAtt(d.date,name))p++;if(hasChk(d.date,name))r++});const pp=D.length?p/D.length:0,rr=D.length?r/D.length:0;return{p,r,pp,rr,tot:Math.round((S.weights.prayer*pp+S.weights.reading*rr)*100)}}
+function gstats(n,S){const ps=usersByGroup(n).map(u=>stats(u.name,S)),a=k=>ps.length?ps.reduce((s,x)=>s+x[k],0)/ps.length:0;return{pp:a("pp"),rr:a("rr"),tot:Math.round(a("tot")),n:ps.length}}
+function badgesFor(name,S){const s=stats(name,S),out=BADGES.filter(b=>b[2](s)).map(b=>b[1]);
+const u=users.find(x=>x.name==name);if(!u)return out;
+const gs=groupNums().map(n=>({n,...gstats(n,S)})).sort((a,b)=>b.tot-a.tot);
+if(gs.length&&gs[0].n==u.group)out.push("Top Sub Group");
+return out}
+
+function render(){root().innerHTML=({login:vLogin,register:vRegister,pending:vPending,app:vApp})[view]();wire()}
+
+function vLogin(){return `<div class="center"><h1 style="text-align:center">📖 Devotion Tracker</h1>
+<div class="card"><label class="mu">Name</label><input type="text" id="li_name" placeholder="Your full name">
+<label class="mu" style="margin-top:8px">Password</label><input type="password" id="li_pw" placeholder="Password">
+${loginErr?`<p class="err">${esc(loginErr)}</p>`:""}
+<p><button class="btn pri" id="btn_login" style="width:100%">Log in</button></p>
+<p class="mu" style="text-align:center">New here? <button class="link" id="btn_toreg">Register</button></p></div></div>`}
+
+function vRegister(){return `<div class="center"><h1 style="text-align:center">📖 Register</h1>
+<div class="card"><label class="mu">Full name</label><input type="text" id="rg_name" placeholder="Your full name">
+<label class="mu" style="margin-top:8px">Choose a password</label><input type="password" id="rg_pw" placeholder="Choose a password">
+<label class="mu" style="margin-top:8px">Confirm password</label><input type="password" id="rg_pw2" placeholder="Confirm password">
+${regErr?`<p class="err">${esc(regErr)}</p>`:""}
+<p><button class="btn pri" id="btn_register" style="width:100%">Register</button></p>
+<p class="mu" style="text-align:center"><button class="link" id="btn_tologin">Back to log in</button></p></div></div>`}
+
+function vPending(){const mail=`mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent("New devotion registration: "+(me?me.name:""))}&body=${encodeURIComponent((me?me.name:"")+" just registered and is waiting to be placed in a sub group.")}`;
+return `<div class="center"><h1 style="text-align:center">You're registered!</h1>
+<div class="card"><p>Thanks, ${esc(me?me.name:"")}. The admin will place you in a sub group soon — once that happens, your portal will open automatically the next time you log in.</p>
+<p><a class="btn pri" href="${mail}" style="display:block;text-align:center;text-decoration:none">Notify the admin by email</a></p>
+<p class="mu" style="text-align:center;margin-top:10px"><button class="link" id="btn_logout">Log out</button></p></div></div>`}
+
+function navItems(){const t=[["today","Today"],["checkin","Check in"],["groups","Groups"],["plan","Reading plan"],["badges","Badges"],["results","Results"],["admin","Admin"]];return t}
+function vApp(){const S=cur();let h=`<div class="row" style="border:0;justify-content:space-between"><h1 style="margin:0">📖 Devotion Tracker</h1><button class="link" id="btn_logout">Log out</button></div>
+<nav>${navItems().map(([k,l])=>`<button data-tab="${k}" class="${tab==k?"on":""}">${l}</button>`).join("")}</nav><div id="v">`;
+h+=({today:vToday,checkin:vCheckin,groups:vGroups,plan:vPlan,badges:vBadges,results:vResults,admin:vAdmin})[tab](S);
+h+=`</div>`;return h}
+
+function vToday(S){if(!S)return `<p class="mu">No season set up yet.</p>`;const D=days(S),i=D.findIndex(d=>d.date==today),d=D[i];
+const s=stats(me.name,S),tasksToday=(hasAtt(today,me.name)?1:0)+(hasChk(today,me.name)?1:0);
+let h=`<div class="card"><h2>Welcome, ${esc(me.name)}</h2><p class="mu">${esc(S.title)} · Day ${i>=0?i+1:"–"} of ${D.length}</p>
+<div class="mu" style="margin-top:8px">Today's tasks completed</div>${bar(tasksToday/2)}<p class="mu">${tasksToday} of 2</p></div>`;
+if(d)h+=`<div class="card"><div class="mu">${d.label}</div><h2>${esc(d.plan[0])}</h2><p>${esc(d.plan[1])}</p><p><span class="tag">6am led today by</span> <b>${esc(leaderOfDay(S,i))}</b></p></div>`;
+return h}
+
+function vCheckin(S){if(!S)return `<p class="mu">No season set up yet.</p>`;const D=days(S),i=D.findIndex(d=>d.date==today),d=D[i];
+if(!d)return `<div class="card"><p class="mu">No reading is scheduled for today.</p></div>`;
+return `<div class="card"><div class="mu">${esc(me.name)} · Group ${me.group} · ${d.label}</div><h2>${esc(d.plan[0])}</h2><p class="mu">${esc(d.plan[1])}</p>
+<label class="chk"><input type="checkbox" id="ci_att" ${hasAtt(today,me.name)?"checked":""}> Prayer present (6am)</label>
+<label class="chk"><input type="checkbox" id="ci_chk" ${hasChk(today,me.name)?"checked":""}> Bible reading done</label></div>`}
+
+function vGroups(){return `<div class="grid">`+groupNums().map(n=>{const leaders=usersByGroup(n).filter(u=>u.role=="Leader"),members=usersByGroup(n).filter(u=>u.role=="Member");
+return `<div class="card"><h2>Sub group ${n}</h2><div class="mu">Leaders</div>${leaders.map(u=>`<div>${esc(u.name)} <span class="tag">Leader</span></div>`).join("")||'<div class="mu">None</div>'}<div class="mu" style="margin-top:8px">Members</div>${members.map(u=>`<div>${esc(u.name)}</div>`).join("")||'<div class="mu">None</div>'}</div>`}).join("")+`</div>`}
+
+function vPlan(S){if(!S)return "";const D=days(S);return `<div class="card">`+D.map(d=>`<div class="row"><span class="mu" style="width:92px">${d.label}</span><b>${esc(d.plan[0])}</b><span class="mu">${esc(d.plan[1])}</span>${hasChk(d.date,me.name)?'<span class="ok">✓</span>':""}</div>`).join("")+`</div>`}
+
+function vBadges(S){if(!S)return "";return `<div class="card"><p class="mu">Badges for ${esc(S.title)}.</p></div>`+
+`<div class="grid">`+activeUsers().map(u=>{const bs=badgesFor(u.name,S);return bs.length?`<div class="card"><b>${esc(u.name)}</b><div style="margin-top:6px">${bs.map(b=>`<span class="badge">🏅 ${esc(b)}</span>`).join("")}</div></div>`:""}).filter(Boolean).join("")+`</div>`}
+
+function vResults(S){if(!S)return "";if(!SETTINGS.released)return `<div class="card"><h2>Results</h2><p class="mu">Final scores appear here once the admin releases them.</p></div>`;
+const s=stats(me.name,S);let h=`<div class="card"><div class="mu">${esc(me.name)}, your performance score</div><div class="big">${s.tot}%</div><div>6am prayer: ${s.p}/${days(S).length} (${pct(s.pp)})</div>${bar(s.pp)}<div style="margin-top:8px">Bible reading: ${s.r}/${days(S).length} (${pct(s.rr)})</div>${bar(s.rr)}</div>`;
+h+=`<div class="card scroll"><h2>Sub group statistics</h2><table><tr><th>Group</th><th>6am prayer</th><th>Reading</th><th>Score</th></tr>${groupNums().map(n=>{const g=gstats(n,S);return `<tr><td>${n}</td><td>${pct(g.pp)}</td><td>${pct(g.rr)}</td><td><b>${g.tot}%</b></td></tr>`}).join("")}</table></div>`;
+return h}
+
+function vAdmin(S){if(!adminUnlocked)return `<div class="card"><h2>Admin access</h2><input type="password" id="adminpw" placeholder="Admin password"><p><button class="btn pri" id="btn_unlock">Unlock</button></p></div>`;
+let h=`<div class="card"><button class="btn" id="btn_lock">🔒 Lock admin</button></div>`;
+h+=`<div class="row" style="border:0">${["pending","roster","import","season","attendance","results"].map(k=>`<button class="btn ${adminTab==k?"pri":""}" data-atab="${k}">${{pending:"Pending",roster:"Roster",import:"Bulk import",season:"Season",attendance:"Attendance",results:"Results"}[k]}</button>`).join("")}</div>`;
+if(adminTab=="pending"){const pend=pendingUsers();h+=`<div class="card"><h2>Pending registrations</h2>${pend.length?pend.map(u=>`<div class="row"><span style="flex:1">${esc(u.name)}</span><select id="grp_${u.slug}">${groupNums().concat([1,2,3,4].filter(n=>!groupNums().includes(n))).sort((a,b)=>a-b).map(n=>`<option value="${n}">Group ${n}</option>`).join("")}</select><select id="role_${u.slug}"><option>Leader</option><option selected>Member</option></select><button class="btn pri" data-approve="${u.slug}">Approve</button></div>`).join(""):'<p class="mu">No one waiting.</p>'}</div>`}
+if(adminTab=="roster"){h+=`<div class="card"><h2>Everyone</h2>${activeUsers().map(u=>`<div class="row"><span style="flex:1">${esc(u.name)}</span><select data-edit="${u.slug}" data-f="group">${[1,2,3,4,5,6].map(n=>`<option ${n==u.group?"selected":""}>${n}</option>`).join("")}</select><select data-edit="${u.slug}" data-f="role"><option ${u.role=="Leader"?"selected":""}>Leader</option><option ${u.role=="Member"?"selected":""}>Member</option></select><button class="btn" data-remove="${u.slug}">Remove</button></div>`).join("")}</div>`}
+if(adminTab=="import"){h+=`<div class="card"><h2>Bulk import</h2><p class="mu">One person per line: <code>Name, Group, Role, Password</code> — Role must be exactly "Leader" or "Member". People already registered are skipped, not overwritten.</p>
+<textarea id="imp_text" placeholder="Alimi, 4, Leader, EcU6KzqNE2
+Winner, 4, Leader, iV1a4AFgJ1"></textarea>
+<p><button class="btn pri" id="btn_import">Import</button></p><div id="imp_result" class="mu"></div></div>`}
+if(adminTab=="season"&&S){h+=`<div class="card"><h2>Seasons</h2><select id="seasel">${seasons.map(s=>`<option value="${s.id}" ${s.id==active?"selected":""}>${esc(s.title)}</option>`).join("")}</select> <button class="btn" id="btn_newseason">+ New quarter</button></div>`;
+if(newSeason)h+=`<div class="card"><h2>New quarter</h2><label class="mu">Title</label><input type="text" id="ns_title"><label class="mu">Start date</label><input type="date" id="ns_start"><label class="mu"><input type="checkbox" id="ns_skip" checked> Skip Sundays</label><label class="mu">Plan — one line per day: Book Chapter | Theme</label><textarea id="ns_plan"></textarea><p><button class="btn pri" id="btn_createseason">Create</button> <button class="btn" id="btn_cancelseason">Cancel</button></p></div>`;
+h+=`<div class="card"><h2>6am leader order</h2><input type="text" id="lorder" value="${esc(leaderOrder(S).join(", "))}"><p><button class="btn" id="btn_saveorder">Save order</button></p></div>`}
+if(adminTab=="attendance"&&S){const D=days(S),d=selDate||(D.find(x=>x.date>=today)||D[0]||{}).date;
+h+=`<div class="card"><h2>Mark attendance / check-in</h2><select id="adate">${D.map(x=>`<option value="${x.date}" ${x.date==d?"selected":""}>${x.label}</option>`).join("")}</select>
+${activeUsers().map(u=>`<div class="row"><span style="flex:1">${esc(u.name)} <span class="tag">Grp ${u.group}</span></span><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-att="${u.slug}" ${hasAtt(d,u.name)?"checked":""}> Prayer</label><label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-chk="${u.slug}" ${hasChk(d,u.name)?"checked":""}> Reading</label></div>`).join("")}</div>`}
+if(adminTab=="results"&&S){h+=`<div class="card"><h2>Results</h2><button class="btn ${SETTINGS.released?"":"pri"}" id="btn_rel">${SETTINGS.released?"Hide results":"Release results to everyone"}</button></div>`}
+return h}
+
+function refSeasonData(id){return db.collection("seasons").doc(id)}
+async function login(){const name=$("#li_name").value.trim(),pw=$("#li_pw").value;if(!name||!pw)return;
+const doc=await db.collection("users").doc(slug(name)).get();
+if(!doc.exists||doc.data().password!==pw){loginErr="Name or password is incorrect.";return render()}
+const u=doc.data();me={name:u.name,slug:slug(name)};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
+view=u.status=="pending"?"pending":"app";loginErr="";render()}
+async function registerUser(){const name=$("#rg_name").value.trim(),pw=$("#rg_pw").value,pw2=$("#rg_pw2").value;
+if(!name||!pw){regErr="Fill in your name and a password.";return render()}
+if(pw!==pw2){regErr="Passwords don't match.";return render()}
+const s=slug(name),doc=await db.collection("users").doc(s).get();
+if(doc.exists){regErr="That name is already registered. Try logging in instead.";return render()}
+await db.collection("users").doc(s).set({name,password:pw,group:null,role:"Member",status:"pending"});
+me={name,slug:s};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
+regErr="";view="pending";render()}
+function logout(){me=null;try{localStorage.removeItem("dev_user")}catch(e){}view="login";render()}
+
+function wire(){
+$("#btn_toreg")&&($("#btn_toreg").onclick=()=>{view="register";regErr="";render()});
+$("#btn_tologin")&&($("#btn_tologin").onclick=()=>{view="login";loginErr="";render()});
+$("#btn_login")&&($("#btn_login").onclick=login);
+$("#btn_register")&&($("#btn_register").onclick=registerUser);
+$("#btn_logout")&&($("#btn_logout").onclick=logout);
+document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});
+document.querySelectorAll("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab;render()});
+$("#ci_att")&&($("#ci_att").onchange=e=>setDoc("attendance",today,me.name,e.target.checked));
+$("#ci_chk")&&($("#ci_chk").onchange=e=>setDoc("checkins",today,me.name,e.target.checked));
+$("#btn_unlock")&&($("#btn_unlock").onclick=()=>{if($("#adminpw").value===ADMIN_PW){adminUnlocked=true;try{localStorage.setItem("dev_admin_ok","1")}catch(e){}render()}else alert("Incorrect password")});
+$("#btn_lock")&&($("#btn_lock").onclick=()=>{adminUnlocked=false;try{localStorage.removeItem("dev_admin_ok")}catch(e){}render()});
+document.querySelectorAll("[data-approve]").forEach(b=>b.onclick=async()=>{const s=b.dataset.approve,grp=+$("#grp_"+s).value,role=$("#role_"+s).value;await db.collection("users").doc(s).update({group:grp,role,status:"active"})});
+document.querySelectorAll("[data-remove]").forEach(b=>b.onclick=async()=>{if(confirm("Remove this person?"))await db.collection("users").doc(b.dataset.remove).delete()});
+document.querySelectorAll("[data-edit]").forEach(el=>el.onchange=async()=>{await db.collection("users").doc(el.dataset.edit).update({[el.dataset.f]:el.dataset.f=="group"?+el.value:el.value})});
+document.querySelectorAll("[data-att]").forEach(el=>el.onchange=()=>{const d=selDate||days(cur()).find(x=>x.date>=today).date,u=users.find(x=>x.slug==el.dataset.att);setDoc("attendance",d,u.name,el.checked)});
+document.querySelectorAll("[data-chk]").forEach(el=>el.onchange=()=>{const d=selDate||days(cur()).find(x=>x.date>=today).date,u=users.find(x=>x.slug==el.dataset.chk);setDoc("checkins",d,u.name,el.checked)});
+$("#adate")&&($("#adate").onchange=e=>{selDate=e.target.value;render()});
+$("#seasel")&&($("#seasel").onchange=async e=>{active=e.target.value;await db.collection("config").doc("active").set({id:active});subscribeSeason()});
+$("#btn_newseason")&&($("#btn_newseason").onclick=()=>{newSeason=true;render()});
+$("#btn_cancelseason")&&($("#btn_cancelseason").onclick=()=>{newSeason=null;render()});
+$("#btn_createseason")&&($("#btn_createseason").onclick=async()=>{const title=$("#ns_title").value.trim(),start=$("#ns_start").value,skip=$("#ns_skip").checked,lines=$("#ns_plan").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split("|");return[(p[0]||"").trim(),(p[1]||"").trim()]});
+if(!title||!start||!lines.length)return alert("Fill in title, start date and at least one plan line");
+const id=slug(title)+"-"+start;await db.collection("seasons").doc(id).set({id,title,start,skipSunday:skip,weights:{prayer:.5,reading:.5},plan:lines,leaderOrder:leaderOrder(cur())});
+await db.collection("config").doc("active").set({id});active=id;newSeason=null;subscribeSeason()});
+$("#btn_import")&&($("#btn_import").onclick=async()=>{const lines=$("#imp_text").value.split("\n").map(l=>l.trim()).filter(Boolean);
+let added=0,skipped=0,bad=0;
+for(const line of lines){const parts=line.split(",").map(x=>x.trim());
+if(parts.length<4||!["Leader","Member"].includes(parts[2])){bad++;continue}
+const[name,grp,role,pw]=parts,s=slug(name);
+const exists=(await db.collection("users").doc(s).get()).exists;
+if(exists){skipped++;continue}
+await db.collection("users").doc(s).set({name,password:pw,group:+grp,role,status:"active"});added++}
+$("#imp_result").textContent=`Added ${added}, skipped ${skipped} already existing, ${bad} lines couldn't be read.`});
+$("#btn_saveorder")&&($("#btn_saveorder").onclick=async()=>{await refSeasonData(active).update({leaderOrder:$("#lorder").value.split(",").map(x=>x.trim()).filter(Boolean)})});
+$("#btn_rel")&&($("#btn_rel").onclick=async()=>{await refSeasonData(active).collection("meta").doc("settings").set({released:!SETTINGS.released})});
+}
+async function setDoc(kind,date,name,val){const ref=refSeasonData(active).collection(kind).doc(date+"__"+slug(name));if(val)await ref.set({at:Date.now()});else await ref.delete()}
+
+let unsubs=[];
+function subscribeSeason(){unsubs.forEach(u=>u());unsubs=[];ATT={};CHK={};SETTINGS={};
+if(!active)return render();
+unsubs.push(refSeasonData(active).collection("attendance").onSnapshot(q=>{ATT={};q.docs.forEach(d=>ATT[d.id]=true);render()}));
+unsubs.push(refSeasonData(active).collection("checkins").onSnapshot(q=>{CHK={};q.docs.forEach(d=>CHK[d.id]=true);render()}));
+unsubs.push(refSeasonData(active).collection("meta").doc("settings").onSnapshot(s=>{SETTINGS=s.exists?s.data():{};render()}));
+}
+
+db.collection("users").onSnapshot(q=>{users=q.docs.map(d=>({slug:d.id,...d.data()}));
+if(me){const u=users.find(x=>x.slug==me.slug);if(u&&u.status=="pending"&&view=="app")view="pending";if(u&&u.status=="active"&&view=="pending")view="app"}
+render()});
+db.collection("seasons").onSnapshot(q=>{seasons=q.docs.map(d=>d.data())});
+db.collection("config").doc("active").onSnapshot(s=>{const id=s.exists?s.data().id:(seasons[0]&&seasons[0].id);if(id&&id!=active){active=id;subscribeSeason()}render()});
+
+if(me)view="app";
+render();
+</script></body></html>
