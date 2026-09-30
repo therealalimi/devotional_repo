@@ -140,9 +140,10 @@ if(adminTab=="results"&&S){h+=`<div class="card"><h2>Results</h2><button class="
 return h}
 
 function refSeasonData(id){return db.collection("seasons").doc(id)}
-async function login(){const name=$("#li_name").value.trim(),pw=$("#li_pw").value;if(!name||!pw)return;
+async function login(){const name=$("#li_name").value.trim(),pw=$("#li_pw").value.trim();if(!name||!pw)return;
 const doc=await db.collection("users").doc(slug(name)).get();
-if(!doc.exists||doc.data().password!==pw){loginErr="Name or password is incorrect.";return render()}
+const stored=doc.exists?String(doc.data().password||"").trim():null;
+if(!doc.exists||stored!==pw){loginErr="Name or password is incorrect.";return render()}
 const u=doc.data();me={name:u.name,slug:slug(name),group:u.group,role:u.role};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
 view=(u.status||"").toLowerCase()=="pending"?"pending":"app";loginErr="";render()}
 async function registerUser(){const name=$("#rg_name").value.trim(),pw=$("#rg_pw").value,pw2=$("#rg_pw2").value;
