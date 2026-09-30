@@ -179,9 +179,15 @@ $("#seasel")&&($("#seasel").onchange=async e=>{active=e.target.value;await db.co
 $("#btn_newseason")&&($("#btn_newseason").onclick=()=>{newSeason=true;render()});
 $("#btn_cancelseason")&&($("#btn_cancelseason").onclick=()=>{newSeason=null;render()});
 $("#btn_createseason")&&($("#btn_createseason").onclick=async()=>{const title=$("#ns_title").value.trim(),start=$("#ns_start").value,skip=$("#ns_skip").checked,lines=$("#ns_plan").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split("|");return[(p[0]||"").trim(),(p[1]||"").trim()]});
-if(!title||!start||!lines.length)return alert("Fill in title, start date and at least one plan line");
-const id=slug(title)+"-"+start;await db.collection("seasons").doc(id).set({id,title,start,skipSunday:skip,weights:{prayer:.5,reading:.5},plan:lines,leaderOrder:leaderOrder(cur())});
-await db.collection("config").doc("active").set({id});active=id;newSeason=null;subscribeSeason()});
+if(!title||!start||!lines.length)return alert("Fill in title, start date and at least one plan line. Start date currently reads: "+(start||"(empty)"));
+try{
+const id=slug(title)+"-"+start;
+await db.collection("seasons").doc(id).set({id,title,start,skipSunday:skip,weights:{prayer:.5,reading:.5},plan:lines,leaderOrder:leaderOrder(cur())});
+await db.collection("config").doc("active").set({id});
+active=id;newSeason=null;subscribeSeason();
+alert("Season created: "+title+" (starts "+start+")");
+}catch(err){alert("Could not create season — error: "+err.message)}
+});
 $("#btn_import")&&($("#btn_import").onclick=async()=>{const lines=$("#imp_text").value.split("\n").map(l=>l.trim()).filter(Boolean);
 let added=0,skipped=0,bad=0;
 for(const line of lines){const parts=line.split(",").map(x=>x.trim());
