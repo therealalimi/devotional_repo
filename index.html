@@ -47,7 +47,7 @@ let users=[],seasons=[],active="",me=null,adminUnlocked=false,view="login",regEr
 try{me=JSON.parse(localStorage.getItem("dev_user")||"null");adminUnlocked=localStorage.getItem("dev_admin_ok")=="1"}catch(e){}
 function season(id){return seasons.find(s=>s.id==id)||seasons[seasons.length-1]}
 function cur(){return season(active)}
-function days(s){if(!s)return[];const out=[];let d=new Date(s.start+"T00:00:00");while(out.length<s.plan.length){if(!(s.skipSunday&&d.getDay()==0))out.push({date:iso(d),label:d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),plan:s.plan[out.length]||["",""]});d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)}return out}
+function days(s){if(!s)return[];const out=[];let d=new Date(s.start+"T00:00:00");while(out.length<s.plan.length){if(!(s.skipSunday&&d.getDay()==0))out.push({date:iso(d),label:d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),plan:s.plan[out.length]||{b:"",t:""}});d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)}return out}
 function activeUsers(){return users.filter(u=>(u.status||"").toLowerCase()=="active")}
 function pendingUsers(){return users.filter(u=>(u.status||"").toLowerCase()=="pending")}
 function usersByGroup(n){return activeUsers().filter(u=>u.group==n)}
@@ -57,7 +57,7 @@ function leaderOfDay(s,idx){const lo=leaderOrder(s);return lo.length?lo[idx%lo.l
 let ATT={},CHK={},SETTINGS={};
 function hasAtt(date,name){return !!ATT[date+"__"+slug(name)]}
 function hasChk(date,name){return !!CHK[date+"__"+slug(name)]}
-function stats(name,S){const D=days(S);let p=0,r=0;D.forEach(d=>{if(hasAtt(d.date,name))p++;if(hasChk(d.date,name))r++});const pp=D.length?p/D.length:0,rr=D.length?r/D.length:0;return{p,r,pp,rr,tot:Math.round((S.weights.prayer*pp+S.weights.reading*rr)*100)}}
+function stats(name,S){const D=days(S),u=users.find(x=>x.name==name),p=(u&&u.prayer_point)||0,r=(u&&u.reading_point)||0,pp=D.length?p/D.length:0,rr=D.length?r/D.length:0;return{p,r,pp,rr,tot:Math.round((pp+rr)/2*100)}}
 function gstats(n,S){const ps=usersByGroup(n).map(u=>stats(u.name,S)),a=k=>ps.length?ps.reduce((s,x)=>s+x[k],0)/ps.length:0;return{pp:a("pp"),rr:a("rr"),tot:Math.round(a("tot")),n:ps.length}}
 function badgesFor(name,S){const s=stats(name,S),out=BADGES.filter(b=>b[2](s)).map(b=>b[1]);
 const u=users.find(x=>x.name==name);if(!u)return out;
@@ -99,19 +99,19 @@ function vToday(S){if(!S)return `<p class="mu">No season set up yet.</p>`;const 
 const s=stats(me.name,S),tasksToday=(hasAtt(today,me.name)?1:0)+(hasChk(today,me.name)?1:0);
 let h=`<div class="card"><h2>Welcome, ${esc(me.name)}</h2><p class="mu">${esc(S.title)} · Day ${i>=0?i+1:"–"} of ${D.length}</p>
 <div class="mu" style="margin-top:8px">Today's tasks completed</div>${bar(tasksToday/2)}<p class="mu">${tasksToday} of 2</p></div>`;
-if(d)h+=`<div class="card"><div class="mu">${d.label}</div><h2>${esc(d.plan[0])}</h2><p>${esc(d.plan[1])}</p><p><span class="tag">6am led today by</span> <b>${esc(leaderOfDay(S,i))}</b></p></div>`;
+if(d)h+=`<div class="card"><div class="mu">${d.label}</div><h2>${esc(d.plan.b)}</h2><p>${esc(d.plan.t)}</p><p><span class="tag">6am led today by</span> <b>${esc(leaderOfDay(S,i))}</b></p></div>`;
 return h}
 
 function vCheckin(S){if(!S)return `<p class="mu">No season set up yet.</p>`;const D=days(S),i=D.findIndex(d=>d.date==today),d=D[i];
 if(!d)return `<div class="card"><p class="mu">No reading is scheduled for today.</p></div>`;
-return `<div class="card"><div class="mu">${esc(me.name)} · Group ${me.group} · ${d.label}</div><h2>${esc(d.plan[0])}</h2><p class="mu">${esc(d.plan[1])}</p>
+return `<div class="card"><div class="mu">${esc(me.name)} · Group ${me.group} · ${d.label}</div><h2>${esc(d.plan.b)}</h2><p class="mu">${esc(d.plan.t)}</p>
 <label class="chk"><input type="checkbox" id="ci_att" ${hasAtt(today,me.name)?"checked":""}> Prayer present (6am)</label>
 <label class="chk"><input type="checkbox" id="ci_chk" ${hasChk(today,me.name)?"checked":""}> Bible reading done</label></div>`}
 
 function vGroups(){return `<div class="grid">`+groupNums().map(n=>{const leaders=usersByGroup(n).filter(u=>u.role=="Leader"),members=usersByGroup(n).filter(u=>u.role=="Member");
 return `<div class="card"><h2>Sub group ${n}</h2><div class="mu">Leaders</div>${leaders.map(u=>`<div>${esc(u.name)} <span class="tag">Leader</span></div>`).join("")||'<div class="mu">None</div>'}<div class="mu" style="margin-top:8px">Members</div>${members.map(u=>`<div>${esc(u.name)}</div>`).join("")||'<div class="mu">None</div>'}</div>`}).join("")+`</div>`}
 
-function vPlan(S){if(!S)return "";const D=days(S);return `<div class="card">`+D.map(d=>`<div class="row"><span class="mu" style="width:92px">${d.label}</span><b>${esc(d.plan[0])}</b><span class="mu">${esc(d.plan[1])}</span>${hasChk(d.date,me.name)?'<span class="ok">✓</span>':""}</div>`).join("")+`</div>`}
+function vPlan(S){if(!S)return "";const D=days(S);return `<div class="card">`+D.map(d=>`<div class="row"><span class="mu" style="width:92px">${d.label}</span><b>${esc(d.plan.b)}</b><span class="mu">${esc(d.plan.t)}</span>${hasChk(d.date,me.name)?'<span class="ok">✓</span>':""}</div>`).join("")+`</div>`}
 
 function vBadges(S){if(!S)return "";return `<div class="card"><p class="mu">Badges for ${esc(S.title)}.</p></div>`+
 `<div class="grid">`+activeUsers().map(u=>{const bs=badgesFor(u.name,S);return bs.length?`<div class="card"><b>${esc(u.name)}</b><div style="margin-top:6px">${bs.map(b=>`<span class="badge">🏅 ${esc(b)}</span>`).join("")}</div></div>`:""}).filter(Boolean).join("")+`</div>`}
@@ -139,7 +139,7 @@ ${activeUsers().map(u=>`<div class="row"><span style="flex:1">${esc(u.name)} <sp
 if(adminTab=="results"){h+=S?`<div class="card"><h2>Results</h2><button class="btn ${SETTINGS.released?"":"pri"}" id="btn_rel">${SETTINGS.released?"Hide results":"Release results to everyone"}</button></div>`:`<div class="card"><p class="mu">Create a season first, in the Season tab, before releasing results.</p></div>`}
 return h}
 
-function refSeasonData(id){return db.collection("seasons").doc(id)}
+function refSeasonData(id){return db.collection("Seasons").doc(id)}
 async function login(){const name=$("#li_name").value.trim(),pw=$("#li_pw").value.trim();if(!name||!pw)return;
 const doc=await db.collection("users").doc(slug(name)).get();
 const stored=doc.exists?String(doc.data().password||"").trim():null;
@@ -151,7 +151,7 @@ if(!name||!pw){regErr="Fill in your name and a password.";return render()}
 if(pw!==pw2){regErr="Passwords don't match.";return render()}
 const s=slug(name),doc=await db.collection("users").doc(s).get();
 if(doc.exists){regErr="That name is already registered. Try logging in instead.";return render()}
-await db.collection("users").doc(s).set({name,password:pw,group:null,role:"Member",status:"pending"});
+await db.collection("users").doc(s).set({name,password:pw,group:null,role:"Member",status:"pending",prayer_point:0,reading_point:0});
 me={name,slug:s};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
 regErr="";view="pending";render()}
 function logout(){me=null;try{localStorage.removeItem("dev_user")}catch(e){}view="login";render()}
@@ -178,11 +178,11 @@ $("#adate")&&($("#adate").onchange=e=>{selDate=e.target.value;render()});
 $("#seasel")&&($("#seasel").onchange=async e=>{active=e.target.value;await db.collection("config").doc("active").set({id:active});subscribeSeason()});
 $("#btn_newseason")&&($("#btn_newseason").onclick=()=>{newSeason=true;render()});
 $("#btn_cancelseason")&&($("#btn_cancelseason").onclick=()=>{newSeason=null;render()});
-$("#btn_createseason")&&($("#btn_createseason").onclick=async()=>{const title=$("#ns_title").value.trim(),start=$("#ns_start").value,skip=$("#ns_skip").checked,lines=$("#ns_plan").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split("|");return[(p[0]||"").trim(),(p[1]||"").trim()]});
+$("#btn_createseason")&&($("#btn_createseason").onclick=async()=>{const title=$("#ns_title").value.trim(),start=$("#ns_start").value,skip=$("#ns_skip").checked,lines=$("#ns_plan").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split("|");return{b:(p[0]||"").trim(),t:(p[1]||"").trim()}});
 if(!title||!start||!lines.length){const missing=[];if(!title)missing.push("title");if(!start)missing.push("start date");if(!lines.length)missing.push("at least one plan line");return alert("Missing: "+missing.join(", ")+". (Title read as: \""+title+"\", plan lines read: "+lines.length+")")}
 try{
 const id=slug(title)+"-"+start;
-await db.collection("seasons").doc(id).set({id,title,start,skipSunday:skip,weights:{prayer:.5,reading:.5},plan:lines,leaderOrder:leaderOrder(cur())});
+await db.collection("Seasons").doc(id).set({title,date:firebase.firestore.Timestamp.fromDate(new Date(start+"T00:00:00")),chapter_theme:lines.map(l=>({chapter:l.b,theme:l.t})),skipSunday:skip,weights:{prayer:.5,reading:.5},leaderOrder:leaderOrder(cur())});
 await db.collection("config").doc("active").set({id});
 active=id;newSeason=null;subscribeSeason();
 alert("Season created: "+title+" (starts "+start+")");
@@ -195,12 +195,17 @@ if(parts.length<4||!["Leader","Member"].includes(parts[2])){bad++;continue}
 const[name,grp,role,pw]=parts,s=slug(name);
 const exists=(await db.collection("users").doc(s).get()).exists;
 if(exists){skipped++;continue}
-await db.collection("users").doc(s).set({name,password:pw,group:+grp,role,status:"active"});added++}
+await db.collection("users").doc(s).set({name,password:pw,group:+grp,role,status:"active",prayer_point:0,reading_point:0});added++}
 $("#imp_result").textContent=`Added ${added}, skipped ${skipped} already existing, ${bad} lines couldn't be read.`});
 $("#btn_saveorder")&&($("#btn_saveorder").onclick=async()=>{await refSeasonData(active).update({leaderOrder:$("#lorder").value.split(",").map(x=>x.trim()).filter(Boolean)})});
 $("#btn_rel")&&($("#btn_rel").onclick=async()=>{await refSeasonData(active).collection("meta").doc("settings").set({released:!SETTINGS.released})});
 }
-async function setDoc(kind,date,name,val){const ref=refSeasonData(active).collection(kind).doc(date+"__"+slug(name));if(val)await ref.set({at:Date.now()});else await ref.delete()}
+async function setDoc(kind,date,name,val){const ref=refSeasonData(active).collection(kind).doc(date+"__"+slug(name));
+const already=kind=="attendance"?hasAtt(date,name):hasChk(date,name);
+if(val===already)return;
+const field=kind=="attendance"?"prayer_point":"reading_point";
+if(val){await ref.set({at:Date.now()});await db.collection("users").doc(slug(name)).update({[field]:firebase.firestore.FieldValue.increment(1)})}
+else{await ref.delete();await db.collection("users").doc(slug(name)).update({[field]:firebase.firestore.FieldValue.increment(-1)})}}
 
 let unsubs=[];
 function subscribeSeason(){unsubs.forEach(u=>u());unsubs=[];ATT={};CHK={};SETTINGS={};
@@ -213,7 +218,10 @@ unsubs.push(refSeasonData(active).collection("meta").doc("settings").onSnapshot(
 db.collection("users").onSnapshot(q=>{users=q.docs.map(d=>({slug:d.id,...d.data()}));
 if(me){const u=users.find(x=>x.slug==me.slug);if(u&&(u.status||"").toLowerCase()=="pending"&&view=="app")view="pending";if(u&&(u.status||"").toLowerCase()=="active"&&view=="pending")view="app"}
 render()});
-db.collection("seasons").onSnapshot(q=>{seasons=q.docs.map(d=>d.data())});
+db.collection("Seasons").onSnapshot(q=>{seasons=q.docs.map(d=>{const raw=d.data(),dt=raw.date&&raw.date.toDate?raw.date.toDate():new Date(raw.date||raw.start);
+return{id:d.id,title:raw.title,start:iso(dt),skipSunday:(raw.skip_sunday!==undefined?raw.skip_sunday:(raw.skipSunday!==undefined?raw.skipSunday:true)),weights:raw.weights||{prayer:.5,reading:.5},leaderOrder:raw.leaderOrder||[],plan:(raw.chapter_theme||raw.plan||[]).map(x=>({b:x.chapter||x.b||"",t:x.theme||x.t||""}))}});
+if(!active&&seasons.length){active=seasons[0].id;subscribeSeason()}
+render()});
 db.collection("config").doc("active").onSnapshot(s=>{const id=s.exists?s.data().id:(seasons[0]&&seasons[0].id);if(id&&id!=active){active=id;subscribeSeason()}render()});
 
 if(me)view="app";
