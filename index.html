@@ -48,8 +48,8 @@ try{me=JSON.parse(localStorage.getItem("dev_user")||"null");adminUnlocked=localS
 function season(id){return seasons.find(s=>s.id==id)||seasons[seasons.length-1]}
 function cur(){return season(active)}
 function days(s){if(!s)return[];const out=[];let d=new Date(s.start+"T00:00:00");while(out.length<s.plan.length){if(!(s.skipSunday&&d.getDay()==0))out.push({date:iso(d),label:d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),plan:s.plan[out.length]||["",""]});d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)}return out}
-function activeUsers(){return users.filter(u=>u.status=="active")}
-function pendingUsers(){return users.filter(u=>u.status=="pending")}
+function activeUsers(){return users.filter(u=>(u.status||"").toLowerCase()=="active")}
+function pendingUsers(){return users.filter(u=>(u.status||"").toLowerCase()=="pending")}
 function usersByGroup(n){return activeUsers().filter(u=>u.group==n)}
 function groupNums(){return[...new Set(activeUsers().map(u=>u.group))].filter(n=>n).sort((a,b)=>a-b)}
 function leaderOrder(s){if(s&&s.leaderOrder&&s.leaderOrder.length)return s.leaderOrder;return activeUsers().filter(u=>u.role=="Leader").map(u=>u.name)}
@@ -70,6 +70,7 @@ function render(){root().innerHTML=({login:vLogin,register:vRegister,pending:vPe
 function vLogin(){return `<div class="center"><h1 style="text-align:center">📖 Devotion Tracker</h1>
 <div class="card"><label class="mu">Name</label><input type="text" id="li_name" placeholder="Your full name">
 <label class="mu" style="margin-top:8px">Password</label><input type="password" id="li_pw" placeholder="Password">
+<label style="display:flex;gap:6px;align-items:center;margin-top:4px;font-size:13px"><input type="checkbox" id="li_show"> Show password</label>
 ${loginErr?`<p class="err">${esc(loginErr)}</p>`:""}
 <p><button class="btn pri" id="btn_login" style="width:100%">Log in</button></p>
 <p class="mu" style="text-align:center">New here? <button class="link" id="btn_toreg">Register</button></p></div></div>`}
@@ -142,8 +143,8 @@ function refSeasonData(id){return db.collection("seasons").doc(id)}
 async function login(){const name=$("#li_name").value.trim(),pw=$("#li_pw").value;if(!name||!pw)return;
 const doc=await db.collection("users").doc(slug(name)).get();
 if(!doc.exists||doc.data().password!==pw){loginErr="Name or password is incorrect.";return render()}
-const u=doc.data();me={name:u.name,slug:slug(name)};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
-view=u.status=="pending"?"pending":"app";loginErr="";render()}
+const u=doc.data();me={name:u.name,slug:slug(name),group:u.group,role:u.role};try{localStorage.setItem("dev_user",JSON.stringify(me))}catch(e){}
+view=(u.status||"").toLowerCase()=="pending"?"pending":"app";loginErr="";render()}
 async function registerUser(){const name=$("#rg_name").value.trim(),pw=$("#rg_pw").value,pw2=$("#rg_pw2").value;
 if(!name||!pw){regErr="Fill in your name and a password.";return render()}
 if(pw!==pw2){regErr="Passwords don't match.";return render()}
@@ -157,6 +158,7 @@ function logout(){me=null;try{localStorage.removeItem("dev_user")}catch(e){}view
 function wire(){
 $("#btn_toreg")&&($("#btn_toreg").onclick=()=>{view="register";regErr="";render()});
 $("#btn_tologin")&&($("#btn_tologin").onclick=()=>{view="login";loginErr="";render()});
+$("#li_show")&&($("#li_show").onchange=e=>{$("#li_pw").type=e.target.checked?"text":"password"});
 $("#btn_login")&&($("#btn_login").onclick=login);
 $("#btn_register")&&($("#btn_register").onclick=registerUser);
 $("#btn_logout")&&($("#btn_logout").onclick=logout);
@@ -202,7 +204,7 @@ unsubs.push(refSeasonData(active).collection("meta").doc("settings").onSnapshot(
 }
 
 db.collection("users").onSnapshot(q=>{users=q.docs.map(d=>({slug:d.id,...d.data()}));
-if(me){const u=users.find(x=>x.slug==me.slug);if(u&&u.status=="pending"&&view=="app")view="pending";if(u&&u.status=="active"&&view=="pending")view="app"}
+if(me){const u=users.find(x=>x.slug==me.slug);if(u&&(u.status||"").toLowerCase()=="pending"&&view=="app")view="pending";if(u&&(u.status||"").toLowerCase()=="active"&&view=="pending")view="app"}
 render()});
 db.collection("seasons").onSnapshot(q=>{seasons=q.docs.map(d=>d.data())});
 db.collection("config").doc("active").onSnapshot(s=>{const id=s.exists?s.data().id:(seasons[0]&&seasons[0].id);if(id&&id!=active){active=id;subscribeSeason()}render()});
