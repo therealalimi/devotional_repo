@@ -179,7 +179,7 @@ $("#seasel")&&($("#seasel").onchange=async e=>{active=e.target.value;await db.co
 $("#btn_newseason")&&($("#btn_newseason").onclick=()=>{newSeason=true;render()});
 $("#btn_cancelseason")&&($("#btn_cancelseason").onclick=()=>{newSeason=null;render()});
 $("#btn_createseason")&&($("#btn_createseason").onclick=async()=>{const title=$("#ns_title").value.trim(),start=$("#ns_start").value,skip=$("#ns_skip").checked,lines=$("#ns_plan").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split("|");return[(p[0]||"").trim(),(p[1]||"").trim()]});
-if(!title||!start||!lines.length)return alert("Fill in title, start date and at least one plan line. Start date currently reads: "+(start||"(empty)"));
+if(!title||!start||!lines.length){const missing=[];if(!title)missing.push("title");if(!start)missing.push("start date");if(!lines.length)missing.push("at least one plan line");return alert("Missing: "+missing.join(", ")+". (Title read as: \""+title+"\", plan lines read: "+lines.length+")")}
 try{
 const id=slug(title)+"-"+start;
 await db.collection("seasons").doc(id).set({id,title,start,skipSunday:skip,weights:{prayer:.5,reading:.5},plan:lines,leaderOrder:leaderOrder(cur())});
